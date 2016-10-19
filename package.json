@@ -1,0 +1,19 @@
+{
+  "name": "seperate_chunk_plugin",
+  "version": "1.0.0",
+  "description": "a webpack plugin to customize how to bundle",
+  "main": "SeperateChunkPlugin.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JanzenZhangChen/SeperateChunkPlgin.git"
+  },
+  "author": "janzenzhang",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/JanzenZhangChen/SeperateChunkPlgin/issues"
+  },
+  "homepage": "https://github.com/JanzenZhangChen/SeperateChunkPlgin#readme"
+}
