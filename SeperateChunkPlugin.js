@@ -29,7 +29,6 @@ function SeperateChunkPlugin(options, filenameTemplate, selectedChunks, minChunk
         selectedChunks = undefined;
     }
     this.chunkNames = chunkNames;
-    this.filenameTemplate = filenameTemplate;
     this.minChunks = minChunks;
     this.selectedChunks = selectedChunks;
     this.ident = __filename + (nextIdent++);
@@ -148,7 +147,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             config[newChunkName].forEach(function(moduleName) {
                 targetModules.push(modResToMod[getProjectPath() + moduleName]);
             })
-            newChunk = generateChunk.call(_this, newChunkName, targetModules, in_array(newChunkName, parentsChunkNameArr), chunks, []);
+            newChunk = generateChunk.call(_this, newChunkName, targetModules, !!in_array(newChunkName, parentsChunkNameArr), chunks, []);
             parentsChunkObj[newChunkName] = newChunk;
         })
 
@@ -164,7 +163,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
                 config[newChunkName].forEach(function(moduleName) {
                     targetModules.push(modResToMod[getProjectPath() + moduleName]);
                 })
-                generateChunk.call(_this, newChunkName, targetModules, in_array(newChunkName, parentsChunkNameArr), chunks, [parentsChunkObj[parentsChunkNameObj[newChunkName]]]);
+                generateChunk.call(_this, newChunkName, targetModules, !!in_array(newChunkName, parentsChunkNameArr), chunks, [parentsChunkObj[parentsChunkNameObj[newChunkName]]]);
             }
         }
 

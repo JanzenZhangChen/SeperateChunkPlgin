@@ -1,6 +1,6 @@
 {
-  "name": "seperate_chunk_plugin",
-  "version": "1.0.0",
+  "name": "@tencent/seperate_chunk_plugin",
+  "version": "1.0.1",
   "description": "a webpack plugin to customize how to bundle",
   "main": "SeperateChunkPlugin.js",
   "scripts": {
