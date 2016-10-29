@@ -9,7 +9,7 @@ Installation 安装
 通过npm安装：
 Install the plugin with npm:
 ```shell
-$ npm install seperate_chunk_plugin --save-dev
+$ npm install seperate-chunk-plugin --save-dev
 ```
 
 基本用法 Basic Usage
@@ -20,7 +20,7 @@ config as follows:
 按如下方式使用：
 
 ```javascript
-var  = require('html-webpack-plugin');
+var SeperateChunkPlugin = require('seperate-chunk-plugin');
 var webpackConfig = {
 	entry: 'index.js',
 	output: {
