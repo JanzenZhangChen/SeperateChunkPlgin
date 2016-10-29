@@ -7,6 +7,14 @@ var nextIdent = 0;
 
 var defaultCommonName = 'common';
 
+if (!console) {
+    console = {
+        log: function(a) {
+            return
+        }
+    }
+}
+
 // bundleFiles 该文件夹下的文件都需要打包在一起。
 function SeperateChunkPlugin(options, filenameTemplate, selectedChunks, minChunks) {
     // if (options && typeof options === "object" && !Array.isArray(options)) {
@@ -132,6 +140,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             _this = this,
             chunkNameObj,
             parentChunkName,
+            chunkname,
             BelongChunksToEntryChunk;
 
         findEntryObj = findParents(config, entries, commonChunks[0]);
@@ -169,12 +178,23 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
 
         chunkNameObj = getchunkNameObj(chunks);
 
-        //往parent chunks 添加各自入口chunks
-        if (commonChunks[0].modules.length == 0) {
-            for (parentChunkName in parentsChunkObj) {
-                parentsChunkObj[parentChunkName].chunks.push(chunkNameObj[BelongChunksToEntryChunk[parentChunkName]]);
+        /**
+         * 往parent chunks 添加各自入口chunks
+         * 比如：
+         * a.parent = c
+         * b.parent = c
+         * c.chunks = [a, b]
+         * 所以这里要把parentchunk 添加上chunks
+         */
+        parentsChunkNameArr.forEach(function(parentChunkName) { // parentChunkName = common
+            for (chunkname in parentsChunkNameObj) {// chunkname = MyButton
+                if (parentsChunkNameObj[chunkname]) {
+                    if (chunkNameObj[parentChunkName].chunks.indexOf(chunkNameObj[chunkname]) < 0) {//防止重复添加
+                        chunkNameObj[parentChunkName].addChunk(chunkNameObj[chunkname]);
+                    }
+                }
             }
-        }
+        })
 
         //移除所有空的chunk
         removeAllEmptyChunk(chunks);
@@ -400,7 +420,6 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
          * 作为entry=true的chunk。
          */
         if (commonModules.length) {
-        // if (false) {
             for (moduleName in commonModObj) {
                 for (chunkName in config) {
                     config[chunkName].forEach(function(configModule) {
@@ -501,7 +520,10 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             //entry为false
             newChunk.initial = true;
             newChunk.entry = isEntry;
-            newChunk.parents = parentsChunk;
+            newChunk.parents = [];
+            parentsChunk.forEach(function(parentchunk) {
+                newChunk.addParent(parentchunk);
+            })
             targetModule.chunks.forEach(function(chunk) {
                 targetModule.removeChunk(chunk); // 从旧的chunk中移除
             })
@@ -515,6 +537,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
                 newChunk.addModule(targetModule);
             }
             targetModule.addChunk(newChunk); // 添加到新的chunk中去
+            newChunk.chunks = [];
         })
         return newChunk
     }
@@ -1072,9 +1095,9 @@ function consoleAllModules(chunks) {
             console.log('----');
 
             console.log('modules : ');
-            chunk.modules.forEach(function(module) {
-                console.log(module.rawRequest);
-            })
+            // chunk.modules.forEach(function(module) {
+            //     console.log(module.rawRequest);
+            // })
             console.log('----');
         });
 
