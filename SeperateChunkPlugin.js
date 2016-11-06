@@ -47,9 +47,9 @@ function SeperateChunkPlugin(options, filenameTemplate, selectedChunks, minChunk
 //正式开始拆分
 function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath, compilation, compiler) {
     var parentChunk = commonChunks[0], // 指定webpack模块初始化器。
-        entries = getModuleRelativePathObj(compilation.entries),
+        entries = getModuleRelativePathObjWithoutType(compilation.entries),
         allModules = getAllModulesExceptEnsure(chunks),
-        pathModObj = getModuleRelativePathObj(allModules),
+        pathModObj = getModuleRelativePathObjWithoutType(allModules),
         modResToMod = getModResToMod(allModules),
         extraModObj = {},
         config, key;
@@ -64,7 +64,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
     } else {
         config = generateConfig(chunks, commonChunks, entries, bundleFiles);
     }
-
+    //判断config结构,并且根据情况会修改config的内容
     if (testConfig(config)) {
         seperateChunksByConfig.call(this, chunks, config, commonChunks, entries);
         writeConfigToFile(config);
@@ -93,7 +93,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             pathModObj, modRes;
 
         chunks.forEach(function(chunk) {
-            pathModObj = getModuleRelativePathObj(chunk.modules);
+            pathModObj = getModuleRelativePathObjWithoutType(chunk.modules);
             for (modRes in pathModObj) {
                 if (!in_array(pathModObj[modRes].resource, dependencies)) {
                     extraModuleInstalledByWebpackSecretly.push(pathModObj[modRes].resource);
@@ -586,8 +586,10 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
         return allDependencies
     }
 
-    // 自动生成配置，不拆分common的模块，保留入口模块在入口chunk
-    function generateConfig(chunks, commonChunks, entries, bundleFiles) {
+    /**
+     * 自动生成配置，不拆分common的模块，保留入口模块在入口chunk
+     */
+    function generateConfig_seperate(chunks, commonChunks, entries, bundleFiles) {
         var config = {},
             pathModObj,
             key,
@@ -595,8 +597,8 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             noCommon = false;
 
         chunks.forEach(function(chunk) {
-            pathModObj = getModuleRelativePathObj(chunk.modules);
-            //公共chunk的话不拆分
+            pathModObj = getModuleRelativePathObjWithoutType(chunk.modules);
+            //非公共chunk的话，进行拆分
             if (!name_in_chunks(chunk.name, commonChunks)) {
                 if (chunk.initial == true) {
                     for (modName in pathModObj) {
@@ -636,6 +638,38 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
         return config
     }
 
+    /**
+     * generateConfig 不拆分，所有chunk保持原样
+     */
+    function generateConfig(chunks, commonChunks, entries, bundleFiles) {
+        var config = {},
+            pathModObj,
+            key,
+            chunkname,
+            noCommon = false;
+
+        chunks.forEach(function(chunk) {
+            pathModObj = getModuleRelativePathObjWithoutType(chunk.modules);
+            config[chunk.name] = [];
+            for (modName in pathModObj) {
+                config[chunk.name].push(getRelativeResource(pathModObj[modName].resource));
+            }
+        })
+
+        for (chunkname in config) {
+            bundleFiles.forEach(function(file) {
+                if (isChunkInFile(file, chunkname)) {
+                    if (!Array.isArray(config[file])) {
+                        config[file] = [];
+                    }
+                    config[file] = config[file].concat(config[chunkname]);
+                    delete config[chunkname];
+                }
+            })
+        }
+
+        return config
+    }
 
     function isChunkInFile(file, chunkName) {
         var isTrue = false,
@@ -664,11 +698,14 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
         return config
     }
 
-    //验证config的格式
+    //验证config的格式 返回真假
     function testConfig(config) {
         //config里面包含的所有文件
-        var configResArr = [];
+        var configResArr = [],
+            missingFiles = [],
+            ret = {}; // 错误返回值。
 
+        //判断的主要逻辑 （先判断是否符合格式）
         if (configStruct()) {
             for (chunkname in config) {
                 config[chunkname].forEach(function(modName) {
@@ -677,12 +714,16 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             }
 
             if (
-                emptyChunk() &&
-                duplication() &&
-                missingFile() &&
-                extraFile()
+                emptyChunk() && // 空的chunk 不允许
+                checkDuplication() && // 重复文件 （@todo应该允许,但是感觉很不好做）
+                checkMissingEntryFile() && // 不允许丢失入口文件
+                extraFile() //多余文件，不允许。
             ) {
+                //满足上述情况下，如果有丢失的文件，那么找出来。
+                checkMissingFile(config);
                 return true
+            } else  {
+                return false
             }
         } else {
             return false
@@ -716,7 +757,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             return ret
         }
         //config中的配置文件没有重复
-        function duplication() {
+        function checkDuplication() {
             var chunkname, tempArr,
                 hash = {}, wrongFile = [], ret = true;
             
@@ -734,19 +775,92 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             }
             return ret;
         }
+
+        //验证config文件中不能缺少入口文件
+        function checkMissingEntryFile() {
+            var entryRelaResArr = [],
+                chunkName,
+                ret = true,
+                missEntryArr = [],
+                allConfigMods = flatConfig(config);
+
+            compilation.entries.forEach(function(entry) {
+                entryRelaResArr.push(getRelativeResource(entry.resource));
+            })
+
+            entryRelaResArr.forEach(function(entry) {
+                if (!in_array(entry, allConfigMods)) {
+                    missEntryArr.push(entry);
+                    ret = false
+                }
+            })
+
+            function flatConfig(config) {
+                var allConfigMods = [],
+                    chunkName;
+                for (chunkName in config) {
+                    config[chunkName].forEach(function(mod) {
+                        allConfigMods.push(mod);
+                    })
+                }
+
+                return allConfigMods
+            }
+
+            missEntryArr = removeDuplicates(missEntryArr);
+            if (!ret) {
+                compilation.errors.push(new Error("入口文件缺失(There are missing entry files in config): \n" + missEntryArr));
+            }
+
+            return ret
+        }
+
         //根据dependencies中的modules，config中配置的文件有没有少了文件
-        function missingFile() {
-            var deps, missingfiles = [], ret = true;
+        function checkMissingFile(config) {
+            var deps, missingFiles = [], ret = true;
             deps = getAllDependenciesRes(compilation);
             deps.forEach(function(dep) {
                 if (!in_array(dep, configResArr)) {
-                    missingfiles.push(dep);
+                    missingFiles.push(getRelativeResource(dep));
                     ret = false;
                 }
             })
 
+            missingFiles = removeDuplicates(missingFiles);
+
+            function changeConfig() {
+                /** 
+                 * 先判断是否在commonchunk里面
+                 * 如果是的话，commonchunk为parentchunk
+                 * 不是的话，各自入口依赖的entrymodule为parentchunk
+                 */
+
+                var modMap = getModuleRelativePathObj(getAllModulesExceptEnsure(chunks));
+                missingFiles.forEach(function(file) {
+                    if (file in modMap) {
+                        config[findChunkForOriginChunk(modMap[file].chunks[0])].unshift(file);
+                    }
+                })
+
+                function findChunkForOriginChunk(chunk) {
+                    var targetChunkName,
+                        chunkName,
+                        targetModName = getRelativeResource(chunk.modules[0].resource);
+
+                    for (chunkName in config) {
+                        if (in_array(targetModName, config[chunkName])) {
+                            targetChunkName = chunkName;
+                        }
+                    }
+
+                    return targetChunkName
+                }
+            }
+
+            changeConfig();
+
             if (!ret) {
-                compilation.errors.push(new Error("文件缺失(There are missing files in config): \n" + missingfiles));
+                compilation.errors.push(new Error("文件缺失,并且已自动帮您添加到seperate.config.js中(There are missing files in config, but we already put it in seperate.config.js for you): \n" + missingFiles));
             }
 
             return ret
@@ -816,7 +930,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
         return allModules
     }
 
-    function getModuleRelativePathObj(allModules) {
+    function getModuleRelativePathObjWithoutType(allModules) {
         var pathModObj = {};
         allModules.forEach(function(mod) {
             var tempPath = mod.resource.substring(getProjectPath().length, mod.resource.length),
@@ -828,6 +942,16 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
         })
         return pathModObj;
     }
+
+    function getModuleRelativePathObj(allModules) {
+        var pathModObj = {};
+        allModules.forEach(function(mod) {
+            var tempPath = mod.resource.substring(getProjectPath().length, mod.resource.length);
+            pathModObj[tempPath] = mod;
+        })
+        return pathModObj;
+    }
+
 
     function getModResToMod(allModules) {
         var modResToMod = {};
