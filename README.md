@@ -14,7 +14,10 @@ $ npm install seperate-chunk-plugin --save-dev
 
 基本用法 Basic Usage
 -----------
-在第一次使用的该插件的时候，插件会将所有依赖的模块，各自打包为一个文件，并不会打包成一个完整的文件。你也可以配置一个文件夹路径，让在这个路径下的文件都打包成一个文件。比如node_modules这样的文件夹下的依赖。都打包在一个文件内。
+如果您之前意境使用过commonChunkPlugin这个插件的话，那么现在只是简单的使用我们的插件替换原来的插件即可。（参数一致，但是minChunks, minSize配置会失效，因为该插件拒接重复打包一个文件的模式，这样不符合该插件的初衷。）
+在第一次使用的该插件的时候，插件会生成和commonChunkPlugin一样的打包文件。
+同时，也会生成一个seperate.config.js，在项目根目录下。
+通过修改该配置，可以自定义修改文件的打包方式。
 
 config as follows:
 按如下方式使用：
@@ -29,8 +32,7 @@ var webpackConfig = {
 	},
 	plugins: [
 		new SeperateChunkPlugin({
-			bundleFiles: ['node_modules'], //初次打包的时候会把文件夹下面的打包在一起。
-			outputScriptPath: './build/load.build.js' //输出script标签的文件位置。
+			name: 'common'
 		})
 	]
 };

@@ -15,5 +15,6 @@
   "bugs": {
     "url": "https://github.com/JanzenZhangChen/SeperateChunkPlgin/issues"
   },
-  "homepage": "https://github.com/JanzenZhangChen/SeperateChunkPlgin#readme"
+  "homepage": "https://github.com/JanzenZhangChen/SeperateChunkPlgin#readme",
+  "devDependencies": {}
 }
