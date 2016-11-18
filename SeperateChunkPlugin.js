@@ -52,11 +52,16 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
         pathModObj = getModuleRelativePathObjWithoutType(allModules),
         modResToMod = getModResToMod(allModules),
         extraModObj = {},
+        originChunks = [],
         config, key;
 
     bundleFiles = testBundleFiles(bundleFiles);
 
     chunks = removeExtraModuleWeDontNeed(chunks, getAllDependenciesRes(compilation), extraModObj);
+
+    chunks.forEach(function(chunk) {
+        originChunks.push(chunk);
+    })
 
     //没有配置文件的情况下要自动生成配置文件
     if (getConfig()) {
@@ -149,6 +154,9 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
         parentsChunkNameArr = findEntryObj.parentsChunkNameArr;
         BelongChunksToEntryChunk = findEntryObj.BelongChunksToEntryChunk;
 
+        //先把现有的chunk里面的module都移除
+        removeAllChunksModule(allModules, originChunks);
+
         //先把作为parent的chunk generate出来
         parentsChunkNameArr.forEach(function(newChunkName) {
             var newChunk;
@@ -200,6 +208,15 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
         removeAllEmptyChunk(chunks);
 
         generateScript(chunks, outputScriptPath, BelongChunksToEntryChunk, parentsChunkNameArr, commonChunks[0]);
+    }
+
+    //先把现有的chunk里面的module都移除
+    function removeAllChunksModule(allModules, originChunks) {
+        allModules.forEach(function(module) {
+            originChunks.forEach(function(chunk) {
+                module.removeChunk(chunk);
+            })
+        })
     }
 
     //生成script标签到console或是文件
@@ -524,9 +541,13 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             parentsChunk.forEach(function(parentchunk) {
                 newChunk.addParent(parentchunk);
             })
-            targetModule.chunks.forEach(function(chunk) {
-                targetModule.removeChunk(chunk); // 从旧的chunk中移除
-            })
+            // targetModule.chunks.forEach(function(chunk) {
+            //     originChunks.forEach(function(originChunk) {
+            //         if (originChunk == chunk) {
+            //             targetModule.removeChunk(chunk); // 从旧的chunk中移除
+            //         };
+            //     })
+            // })
             //目标module是不是已经在newchunk里面了是的话就不重复添加
             newChunk.modules.forEach(function(module) {
                 if (module.resource == targetModule.resource) {
@@ -648,6 +669,8 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             chunkname,
             noCommon = false;
 
+        removeAllEmptyChunk(chunks);
+
         chunks.forEach(function(chunk) {
             pathModObj = getModuleRelativePathObjWithoutType(chunk.modules);
             config[chunk.name] = [];
@@ -715,7 +738,8 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
 
             if (
                 emptyChunk() && // 空的chunk 不允许
-                checkDuplication() && // 重复文件 （@todo应该允许,但是感觉很不好做）
+                checkChunkDuplication() && // chunk内不允许重复，总体允许
+                // checkDuplication() && // 重复文件 （@todo应该允许,但是感觉很不好做）
                 checkMissingEntryFile() && // 不允许丢失入口文件
                 extraFile() //多余文件，不允许。
             ) {
@@ -758,8 +782,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
         }
         //config中的配置文件没有重复
         function checkDuplication() {
-            var chunkname, tempArr,
-                hash = {}, wrongFile = [], ret = true;
+            var hash = {}, wrongFile = [], ret = true;
             
             for (var i = 0, elem; (elem = configResArr[i]) != null; i++) {
                 if (!hash[elem]) {
@@ -774,6 +797,29 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
                 compilation.errors.push(new Error("文件存在重复(There are duplicate files in config): \n" + wrongFile));
             }
             return ret;
+        }
+
+        //config中的配置文件在同个chunk内不能重复，在总体的可以重复。
+        function checkChunkDuplication() {
+            var hash, ret = true, wrongFile = [];
+
+            for (var j in config) {
+                hash = {};
+                for (var i = 0, elem; (elem = config[j][i]) != null; i++) {
+                    if (!hash[elem]) {
+                        hash[elem] = true;
+                    } else {
+                        wrongFile.push(elem + "\n");
+                        ret = false;
+                    }
+                }
+            }
+
+            if(!ret) {
+                compilation.errors.push(new Error("同一个chunk内不允许存在重复文件(There are duplicate files in config‘s chunks): \n" + wrongFile));
+            }
+
+            return ret
         }
 
         //验证config文件中不能缺少入口文件
