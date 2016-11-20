@@ -2,11 +2,11 @@ SeperateChunkPlgin
 ===================
 webpack的打包特点一直是倾向于all-in-one的打包方式，尽管有commonsChunkPlugin,等一系列优化工具，但是在一些业务中这样还是会导致性能损耗。 因为系统无法自动地理解文件之间的业务关系，所以无法极致地优化使用体验。
 
-这是一个webpack插件，其让你通过配置文件将你的所有依赖的文件，按照自己的意愿来进行打包，可以打包成任意多个bundle文件，任意祝贺方式。
+这是一个webpack插件，其让你通过配置文件将你的所有依赖的文件，按照自己的意愿来进行打包，可以打包成任意多个bundle文件，任意组合方式。
 
 维护者: janzenzhang
 
-Installation 安装
+安装 Installation
 ------------
 通过npm安装：
 Install the plugin with npm:
@@ -22,8 +22,8 @@ $ npm install seperate-chunk-plugin --save-dev
 但同时，也会生成一个seperate.config.js的配置文件，在项目根目录下，与webpack.config.js在一个文件夹下。
 通过修改该配置，则可以自定义修改文件的打包方式。
 
-config as follows:
 按如下方式使用：
+config as follows:
 
 ```javascript
 var SeperateChunkPlugin = require('seperate-chunk-plugin');
@@ -35,14 +35,19 @@ var webpackConfig = {
 	},
 	plugins: [
 		new SeperateChunkPlugin({
-			name: 'common'
-			, minChunks: 10 //类似的commonsChunkPlugin的参数，完全一致
+			name: 'common',
+			minChunks: 10 //与commonsChunkPlugin的参数，完全一致。
 		})
+		// new CommonsChunkPlugin({
+		//	 name: 'common'
+		//	 , minChunks: 10
+		// })
 	]
 };
 ```
-在第一次使用以后，效果与实用commonsChunkPlugin没有差别，但会在在项目路径下生成seperate.config.js文件，该文件包含了关于如何打包的配置文件。你可以手动将不同的文件放到一个数组内，意味将这些文件都打包在一起，这个数组的key值便是这个bundle文件的name值。
+在第一次使用以后，效果与使用commonsChunkPlugin没有差别，但会在在项目路径下生成seperate.config.js文件，该文件决定了如何打包。你可以手动将不同的文件放到一个数组内，意味将这些文件都打包在一起，这个数组的key值便是这个bundle文件的name值。
 
+seperate.config.js :
 ```javascript
 module.exports = {
 	"components/b": [
@@ -57,6 +62,7 @@ module.exports = {
 	]
 }
 ```
+
 但是，由于可能自定的文件非常多，在html使用script标签加载文件的时候，需要有一定的顺序。
 比如带有webpack模块管理的模块要第一个执行，入口文件需要放到最后执行。为了方便使用，会在命令行输出可以直接使用的script标签。
 所以用户必须使用插件提供的script标签，复制到html里面，来加载文件。这个会在命令行输出给用户，也可以输出成一个文件。
