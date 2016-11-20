@@ -5,8 +5,6 @@ var fs = require('fs');
 
 var nextIdent = 0;
 
-var defaultCommonName = 'common';
-
 if (!console) {
     console = {
         log: function(a) {
@@ -17,31 +15,33 @@ if (!console) {
 
 // bundleFiles 该文件夹下的文件都需要打包在一起。
 function SeperateChunkPlugin(options, filenameTemplate, selectedChunks, minChunks) {
-    // if (options && typeof options === "object" && !Array.isArray(options)) {
-    //     this.chunkNames = options.name || options.names;
-    //     this.filenameTemplate = options.filename;
-    //     this.minChunks = options.minChunks;
-    //     this.selectedChunks = options.chunks;
-    //     if (options.children) this.selectedChunks = false;
-    //     this.async = options.async;
-    //     this.minSize = options.minSize;
-    // } else {
-    var chunkNames = defaultCommonName;
-    if (typeof filenameTemplate !== "string" && filenameTemplate !== null) {
-        minChunks = selectedChunks;
-        selectedChunks = filenameTemplate;
-        filenameTemplate = chunkNames;
+    if(options && typeof options === "object" && !Array.isArray(options)) {
+        this.chunkNames = options.name || options.names;
+        this.filenameTemplate = options.filename;
+        this.minChunks = options.minChunks;
+        this.selectedChunks = options.chunks;
+        if(options.children) this.selectedChunks = false;
+        this.async = options.async;
+        this.minSize = options.minSize;
+        this.outputScriptPath = options.outputScriptPath;
+        this.bundleFiles = options.bundleFiles;
+    } else {
+        var chunkNames = options;
+        if(typeof filenameTemplate !== "string" && filenameTemplate !== null) {
+            minChunks = selectedChunks;
+            selectedChunks = filenameTemplate;
+            filenameTemplate = chunkNames;
+        }
+        if(!Array.isArray(selectedChunks) && typeof selectedChunks !== "boolean" && selectedChunks !== null) {
+            minChunks = selectedChunks;
+            selectedChunks = undefined;
+        }
+        this.chunkNames = chunkNames;
+        this.filenameTemplate = filenameTemplate;
+        this.minChunks = minChunks;
+        this.selectedChunks = selectedChunks;
     }
-    if (!Array.isArray(selectedChunks) && typeof selectedChunks !== "boolean" && selectedChunks !== null) {
-        minChunks = selectedChunks;
-        selectedChunks = undefined;
-    }
-    this.chunkNames = chunkNames;
-    this.minChunks = minChunks;
-    this.selectedChunks = selectedChunks;
     this.ident = __filename + (nextIdent++);
-    this.bundleFiles = options.bundleFiles;
-    this.outputScriptPath = options.outputScriptPath;
 }
 
 //正式开始拆分
@@ -85,6 +85,10 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             newBundleFiles = [bundleFiles];
         }
 
+        if (typeof bundleFiles == 'undefined') {
+            newBundleFiles = [];
+        }
+
         return newBundleFiles
     }
 
@@ -100,7 +104,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
         chunks.forEach(function(chunk) {
             pathModObj = getModuleRelativePathObjWithoutType(chunk.modules);
             for (modRes in pathModObj) {
-                if (!in_array(pathModObj[modRes].resource, dependencies)) {
+                if (!in_array(pathModObj[modRes].resource, dependencies) && chunk.initial == true) {
                     extraModuleInstalledByWebpackSecretly.push(pathModObj[modRes].resource);
                 }
             }
@@ -203,6 +207,15 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
                 }
             }
         })
+        //设置异步chunk的parent的
+        chunks.forEach(function(asyncChunk) {
+            var parentNameArr = [];
+            if (asyncChunk.initial == false) {
+                asyncChunk.parents.forEach(function(parentchunk) {
+                    parentchunk.chunks.push(asyncChunk);
+                })
+            }
+        })
 
         //移除所有空的chunk
         removeAllEmptyChunk(chunks);
@@ -247,11 +260,15 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
 
             //转换一下
             for (chunk in BelongChunksToEntryChunk) {
-                entrychunk = BelongChunksToEntryChunk[chunk];
-                if (!Array.isArray(entryToChunk[entrychunk])) {
-                    entryToChunk[entrychunk] = [];
-                }
-                entryToChunk[entrychunk].push(chunk);
+                entrychunks = BelongChunksToEntryChunk[chunk];
+                entrychunks.forEach(function(entrychunk) {
+                    if (!entryToChunk[entrychunk]) {
+                        entryToChunk[entrychunk] = [];
+                    }
+                    if (!in_array(chunk, entryToChunk[entrychunk])) {
+                        entryToChunk[entrychunk].push(chunk);
+                    }
+                })
             }
             //找到当中的parent放在最开头,entry放在最后,common移除
             for (entry in entryToChunk) {
@@ -320,7 +337,6 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             chunkAmountObj = {},
             entriesResources = {},
             moduleResToEntryResObj = {},
-            moduleResToEntryChunk = {},
             entryChunkToBelongChunks = {},
             moduleResToChunk = {},
             BelongChunksToEntryChunk = {},
@@ -344,11 +360,21 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
          *      'module resource' : 'trunk',
          *      'module resource' : 'trunk',
          *      ...
-         *  } 
+         *  }
+         * moduleResToChunk = {
+         *      'module resource' : ['trunk1', 'trunk2'],
+         *      'module resource' : ['trunk'],
+         *      ...
+         *  }
          */
         for (chunkName in config) {
             config[chunkName].forEach(function(moduleName) {
-                moduleResToChunk[getProjectPath() + moduleName] = chunkName;
+                if (!moduleResToChunk[getProjectPath() + moduleName]) {
+                    moduleResToChunk[getProjectPath() + moduleName] = [];
+                }
+                if (!in_array(chunkName, moduleResToChunk[getProjectPath() + moduleName])) {
+                    moduleResToChunk[getProjectPath() + moduleName].push(chunkName);
+                }
             })
         }
 
@@ -365,10 +391,20 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
          *   'config的module.resource'：'该module所在的入口.resource',
          *   ...
          * }
+         * moduleResToEntryResObj = {
+         *   'config的module.resource'：['该module所在的入口.resource', '第二个入口的resource'],
+         *   'config的module.resource'：['该module所在的入口.resource'],
+         *   ...
+         * }
          */
         for (entryRes in entriesResources) {
             entriesResources[entryRes].forEach(function(moduleRes){
-                moduleResToEntryResObj[moduleRes] = entryRes;
+                if (!moduleResToEntryResObj[moduleRes]) {
+                    moduleResToEntryResObj[moduleRes] = [];
+                }
+                if (!in_array(entryRes, moduleResToEntryResObj[moduleRes])) {
+                    moduleResToEntryResObj[moduleRes].push(entryRes);
+                }
             })
         }
 
@@ -391,17 +427,6 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
                 }
             })
         }
-        
-        /*
-         *  moduleResToEntryChunk : {
-         *      'module resource' : 'entry chunk',
-         *      'module resource' : 'entry chunk',
-         *      ...
-         *  }  
-         */
-        if (moduleRes in moduleResToEntryResObj) {
-            moduleResToEntryChunk[moduleRes] = entryResToEntryChunk[ moduleResToEntryChunk[moduleRes] ];
-        }
 
         /*
          * entryChunkToBelongChunks = {
@@ -411,10 +436,23 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
          * }
          */
         for (entryRes in entriesResources) {
-            entryChunkToBelongChunks[ moduleResToChunk[entryRes] ] = [];
+            entryChunkToBelongChunks[ moduleResToChunk[entryRes][0] ] = [];
+
             entriesResources[ entryRes ].forEach(function(moduleRes) {
-                entryChunkToBelongChunks[ moduleResToChunk[entryRes] ].push( moduleResToChunk[moduleRes] );
+                moduleResToChunk[moduleRes].forEach(function(chunkname) {
+                    var thisIsTheChunk = true;
+                    config[chunkname].forEach(function(module) {
+                        if(!in_array(entryRes, moduleResToEntryResObj[getProjectPath() + module])) {
+                            thisIsTheChunk = false;
+                        }
+                    })
+                    if (thisIsTheChunk) {
+                        entryChunkToBelongChunks[ moduleResToChunk[entryRes][0] ].push(chunkname);
+                    }
+                })
             })
+
+            entryChunkToBelongChunks[ moduleResToChunk[entryRes][0] ] = removeDuplicates( entryChunkToBelongChunks[ moduleResToChunk[entryRes][0] ] );
         }
 
         /*
@@ -423,10 +461,20 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
          *     'chunk' : 'entry chunk',
          *     ...
          * }
+         * BelongChunksToEntryChunk = {
+         *     'chunk' : ['entry chunk', 'entry chunk'],
+         *     'chunk' : ['entry chunk'],
+         *     ...
+         * }
          */
         for (entryChunkName in entryChunkToBelongChunks) {
             entryChunkToBelongChunks[entryChunkName].forEach(function(chunkname) {
-                BelongChunksToEntryChunk[chunkname] = entryChunkName;
+                if (!BelongChunksToEntryChunk[chunkname]) {
+                    BelongChunksToEntryChunk[chunkname] = [];
+                }
+                if (!in_array(entryChunkName, BelongChunksToEntryChunk[chunkname])) {
+                    BelongChunksToEntryChunk[chunkname].push(entryChunkName);
+                }
             })
         }
 
@@ -472,16 +520,17 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             //parentsChunkObj
             for (chunkname in config) {
                 (function(chunkname){
-                    var tempEntryChunk = BelongChunksToEntryChunk[chunkname];
-                    entryChunkToBelongChunks[tempEntryChunk].forEach(function(chunk) {
-                        if (chunk == tempEntryChunk && chunk!= chunkname) {
-                            return
-                        } else {
-                            targetChunk = chunk;
-                        }
-                    })
-                    entryChunkToBelongChunks[tempEntryChunk].forEach(function(chunk) {
-                        parentsChunkObj[chunk] = targetChunk;
+                    BelongChunksToEntryChunk[chunkname].forEach(function(tempEntryChunk) {
+                        entryChunkToBelongChunks[tempEntryChunk].forEach(function(chunk) {
+                            if (chunk == tempEntryChunk && chunk!= chunkname) {
+                                return
+                            } else {
+                                targetChunk = chunk;
+                            }
+                        })
+                        entryChunkToBelongChunks[tempEntryChunk].forEach(function(chunk) {
+                            parentsChunkObj[chunk] = targetChunk;
+                        })
                     })
                 })(chunkname);
             }
@@ -672,10 +721,12 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
         removeAllEmptyChunk(chunks);
 
         chunks.forEach(function(chunk) {
-            pathModObj = getModuleRelativePathObjWithoutType(chunk.modules);
-            config[chunk.name] = [];
-            for (modName in pathModObj) {
-                config[chunk.name].push(getRelativeResource(pathModObj[modName].resource));
+            if (chunk.initial == true) {
+                pathModObj = getModuleRelativePathObjWithoutType(chunk.modules);
+                config[chunk.name] = [];
+                for (modName in pathModObj) {
+                    config[chunk.name].push(getRelativeResource(pathModObj[modName].resource));
+                }
             }
         })
 
@@ -710,11 +761,12 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
 
     function getConfig() {
         var configLoc = getConfigPath(),
-            config, ret, bool;
+            config = 'hehe', ret, bool;
 
         try {
             config = require(configLoc);
         } catch (e) {
+            // console.log(e);
             config = false
         }
 
@@ -723,6 +775,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
 
     //验证config的格式 返回真假
     function testConfig(config) {
+        // console.log(config);
         //config里面包含的所有文件
         var configResArr = [],
             missingFiles = [],
@@ -794,9 +847,10 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             }
 
             if (!ret) {
-                compilation.errors.push(new Error("文件存在重复(There are duplicate files in config): \n" + wrongFile));
+                compilation.warnings.push(new Error("配置中有重复出现的文件，但在同一入口依赖的chunk下只会生成一次哦。(There are duplicate files in config): \n" + wrongFile));
             }
-            return ret;
+            //尽管有重复文件，但是允许，只是提示。
+            return true;
         }
 
         //config中的配置文件在同个chunk内不能重复，在总体的可以重复。
@@ -948,7 +1002,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
     function getConfigPath() {
         var configFileName = 'seperate.config.js',
             path = getProjectPath();
-        return path + '/' + configFileName;
+        return path + configFileName;
     }
 
     //把配置写到seperate.config.js里面
@@ -1050,7 +1104,6 @@ SeperateChunkPlugin.prototype.apply = function(compiler) {
     var outputScriptPath = this.outputScriptPath;
     compiler.plugin("this-compilation", function(compilation) {
         compilation.plugin(["optimize-chunks", "optimize-extracted-chunks"], function(chunks) {
-            // console.log(chunks);
             // only optimize once
             if (compilation[ident]) return;
             compilation[ident] = true;
