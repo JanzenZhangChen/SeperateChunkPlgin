@@ -2,6 +2,8 @@
     Author Janzenzhang from Tencent
 */
 var fs = require('fs');
+var path = require('path');
+var MODULE = require('module');
 
 var nextIdent = 0;
 
@@ -47,8 +49,8 @@ function SeperateChunkPlugin(options, filenameTemplate, selectedChunks, minChunk
 //正式开始拆分
 function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath, compilation, compiler) {
     var parentChunk = commonChunks[0], // 指定webpack模块初始化器。
-        entries = getModuleRelativePathObjWithoutType(compilation.entries),
         allModules = getAllModulesExceptEnsure(chunks),
+        entries = getModuleRelativePathObjWithoutType(compilation.entries),
         pathModObj = getModuleRelativePathObjWithoutType(allModules),
         modResToMod = getModResToMod(allModules),
         extraModObj = {},
@@ -223,12 +225,37 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
         generateScript(chunks, outputScriptPath, BelongChunksToEntryChunk, parentsChunkNameArr, commonChunks[0]);
     }
 
-    //先把现有的chunk里面的module都移除
+    // 先把现有的chunk里面的module都移除
     function removeAllChunksModule(allModules, originChunks) {
         allModules.forEach(function(module) {
             originChunks.forEach(function(chunk) {
                 module.removeChunk(chunk);
             })
+        })
+    }
+
+    // 把所有的module的内容
+    function setModResource(allModules) {
+        compiler.options.resolve.extensions.forEach(function(ext) {
+            if (ext && !MODULE._extensions[ext]) {
+                MODULE._extensions[ext] = function() {
+                    //空的 因为module._findPath需要遍历后缀，然后才能找到没有带后缀的文件。
+                }
+            }
+        });
+        allModules.forEach(function(mod) {
+            if (!mod.resource) {
+                try {
+                    mod.resource = require.resolve(mod.reasons[0].dependency.request);
+                } catch (e) {
+                    try {
+                        mod.resource = require.resolve(mod.reasons[0].module.context + '/' + mod.reasons[0].dependency.request);
+                    } catch (e) {
+                        mod.resource = mod.reasons[0].module.context + '/' + mod.reasons[0].dependency.request;
+                    }
+                }
+                // console.log(mod.resource);
+            }
         })
     }
 
@@ -1027,6 +1054,8 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             })
         });
 
+        setModResource(allModules);
+
         return allModules
     }
 
@@ -1079,6 +1108,9 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
     }
 
     function getRelativeResource(resource) {
+        if (getProjectPath().length > resource.length) {
+            return resource
+        }
         return resource.substring(getProjectPath().length, resource.length)
     }
 
