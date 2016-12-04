@@ -202,13 +202,16 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
          */
         parentsChunkNameArr.forEach(function(parentChunkName) { // parentChunkName = common
             for (chunkname in parentsChunkNameObj) {// chunkname = MyButton
-                if (parentsChunkNameObj[chunkname]) {
+                if (parentsChunkNameObj[chunkname] == parentChunkName) {
                     if (chunkNameObj[parentChunkName].chunks.indexOf(chunkNameObj[chunkname]) < 0) {//防止重复添加
                         chunkNameObj[parentChunkName].addChunk(chunkNameObj[chunkname]);
                     }
                 }
             }
         })
+        for (chunkname in parentsChunkNameObj) {
+            chunkname
+        }
         //设置异步chunk的parent的
         chunks.forEach(function(asyncChunk) {
             var parentNameArr = [];
@@ -628,7 +631,8 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
                 }
             })
         }
-
+        // console.log(parentsChunkObj);
+        // console.log(parentsChunkArr);
         /* 
          * 如果commonChunkplugin的逻辑帮我们分析出了全部公共模块
          * 找出这些公共模块在config中所在的所有chunk
