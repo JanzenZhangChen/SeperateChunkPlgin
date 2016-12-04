@@ -25,7 +25,7 @@ function SeperateChunkPlugin(options, filenameTemplate, selectedChunks, minChunk
         if(options.children) this.selectedChunks = false;
         this.async = options.async;
         this.minSize = options.minSize;
-        this.outputScriptPath = options.outputScriptPath;
+        this.outputScriptFile = options.outputScriptFile;
         this.bundleFiles = options.bundleFiles;
     } else {
         var chunkNames = options;
@@ -47,7 +47,7 @@ function SeperateChunkPlugin(options, filenameTemplate, selectedChunks, minChunk
 }
 
 //正式开始拆分
-function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath, compilation, compiler) {
+function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile, compilation, compiler) {
     var parentChunk = commonChunks[0], // 指定webpack模块初始化器。
         allModules = getAllModulesExceptEnsure(chunks),
         entries = getModuleRelativePathObjWithoutType(compilation.entries),
@@ -222,7 +222,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
         //移除所有空的chunk
         removeAllEmptyChunk(chunks);
 
-        generateScript(chunks, outputScriptPath, BelongChunksToEntryChunk, parentsChunkNameArr, commonChunks[0]);
+        generateScript(chunks, outputScriptFile, BelongChunksToEntryChunk, parentsChunkNameArr);
     }
 
     // 先把现有的chunk里面的module都移除
@@ -261,23 +261,22 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
     }
 
     //生成script标签到console或是文件
-    function generateScript(chunks, outputScriptPath, BelongChunksToEntryChunk, parentsChunkNameArr, commonChunk) {
+    function generateScript(chunks, outputScriptFile, BelongChunksToEntryChunk, parentsChunkNameArr) {
         var entrychunk, chunk,
-            commonChunkName = commonChunk.name;
             scriptTpl = '<script src=\"$path$\"></script>\n';
             colorScriptTpl = '<script src=\"\033[32m$path$\033[0m\"></script>'
             outputFileName = compilation.options.output.filename, // [name].js
-            outputPath = compilation.options.output.path + '/', // './build/dest' + '/'
+            outputPath = getRelativeResourcePath(compilation.options.output.publicPath ? compilation.options.output.publicPath : compilation.options.output.path + '/'), // './build/dest' + '/'
             genScriptStringObj = genScriptString(),
             scriptString = genScriptStringObj.finalString,
             scriptJson = genScriptStringObj.finalJson;
 
-        if (outputScriptPath) {
+        if (outputScriptFile) {
             //输出到文件中
             (function() {
                 var fileStr = '/**\n' + scriptString + '*/\nmodule.exports = ';
                 fileStr += JSON.stringify(scriptJson, null, 4);
-                fs.writeFileSync(getProjectPath() + outputScriptPath, fileStr);
+                fs.writeFileSync(path.resolve(getProjectPath() + outputScriptFile), fileStr);
             })()
         }
 
@@ -298,7 +297,8 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
                     }
                 })
             }
-            //找到当中的parent放在最开头,entry放在最后,common移除
+
+            //找到当中的parent放在最开头,entry放在最后
             for (entry in entryToChunk) {
                 parentsChunkNameArr.forEach(function(parentchunk) {
                     var parentIndex = in_array(parentchunk, entryToChunk[entry]),
@@ -314,29 +314,22 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
                         temp = entryToChunk[entry].splice(entryIndex, 1);
                         entryToChunk[entry].push(temp[0]);
                     }
-                    commonIndex = in_array(commonChunkName, entryToChunk[entry]);
-                    if (commonIndex) {
-                        temp = entryToChunk[entry].splice(commonIndex, 1);
-                    }
                 })
             }
 
-            if (commonChunk.modules.length) {
-                for (entrychunk in entryToChunk) {
-                    entryToChunk[entrychunk].unshift(commonChunkName);
-                }
-            }
-
             for (entrychunk in entryToChunk) {
-                console.log('\033[32m' + entrychunk + ' : \033[0m');
+                if (!outputScriptFile) {
+                    console.log('\033[32m' + entrychunk + ' : \033[0m');                    
+                }
                 finalString = finalString + entrychunk + '\n';
                 finalJson[entrychunk] = [];
                 entryToChunk[entrychunk].forEach(function(chunkname) {
                     var nameStr = outputPath + outputFileName.replace(/\[name\]/g, chunkname),
                         colorScriptStr = colorScriptTpl.replace(/\$path\$/g, nameStr);
                         scriptStr = scriptTpl.replace(/\$path\$/g, nameStr);
-
-                    console.log(colorScriptStr);
+                    if (!outputScriptFile) {
+                        console.log(colorScriptStr);                        
+                    }
                     finalString += scriptStr;
                     finalJson[entrychunk].push(nameStr);
                 })
@@ -371,6 +364,8 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             BelongChunksToEntryChunk = {},
             entryResToEntryChunk = {},
             entryChunkToEntryRes = {},
+            UsedTimeObj = {},
+            siblingChunkObj = {},
             targetChunks = [],
             parentsChunkArr = [],
             chunkName, moduleName,
@@ -576,70 +571,128 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
             })
         }
 
+        /**
+         * 兄弟chunk:被自己的所有入口chunk引用的所有其他chunk，包括自己
+         * siblingChunkObj: {
+         *     '每一个chunkname': ['chunkname', 'chunkname'],
+         *     '每一个chunkname': ['chunkname'],
+         *     '每一个chunkname': ['chunkname', 'chunkname'],
+         * }
+         */
+        for (chunkname in config) {
+            BelongChunksToEntryChunk[chunkname].forEach(function(entryChunk) {
+                entryChunkToBelongChunks[entryChunk].forEach(function(siblingChunk) {
+                    if (!siblingChunkObj[chunkname]) {
+                        siblingChunkObj[chunkname] = [siblingChunk];
+                    } else {
+                        if (!in_array(siblingChunk, siblingChunkObj[chunkname])) {
+                            siblingChunkObj[chunkname].push(siblingChunk);
+                        }
+                    }
+                })
+            })
+        }
+
+        /**
+         * UsedTimeObj，每一个chunk被页面需要的次数
+         */
+        for (chunkname in  BelongChunksToEntryChunk) {
+            if ((BelongChunksToEntryChunk[chunkname].length == 1) && (BelongChunksToEntryChunk[chunkname][0] == chunkname)) {
+                UsedTimeObj[chunkname] = 0;
+            } else {
+                UsedTimeObj[chunkname] = BelongChunksToEntryChunk[chunkname].length;
+            }
+        }
+        /**
+         * 执行寻找parent的算法
+         */
+        // console.log(entryChunkToBelongChunks);
+        // console.log(BelongChunksToEntryChunk);
+        // console.log(siblingChunkObj);
+        // console.log(UsedTimeObj);
+        var notEntry = '$$notEntry$$',
+            noParents = '$$noParents$$';
+        for (chunkname in config) {
+            var mostUsedChunk = findMostUsedChunk(siblingChunkObj[chunkname], chunkname, UsedTimeObj, parentsChunkObj, parentsChunkArr, notEntry, noParents, compilation);
+            //如果发现没有能找到entry说明进入了死锁情景。那么就拿一个已有的parentChunk作为入口
+            if (mostUsedChunk == chunkname && siblingChunkObj[chunkname].length > 1) {
+                parentsChunkObj[chunkname] = noParents;
+            }
+
+            siblingChunkObj[chunkname].forEach(function(sibling) {
+                if (sibling == mostUsedChunk) {
+                    parentsChunkObj[chunkname] = mostUsedChunk;
+                    pushWithoutDuplication(mostUsedChunk, parentsChunkArr);
+                } else if (!(sibling in entryChunkToBelongChunks) && !parentsChunkObj[chunkname]){
+                    parentsChunkObj[chunkname] = notEntry;
+                }
+            })
+        }
+
         /* 
          * 如果commonChunkplugin的逻辑帮我们分析出了全部公共模块
          * 找出这些公共模块在config中所在的所有chunk
          * 找出这些chunk中最大的一个
          * 作为entry=true的chunk。
          */
-        if (commonModules.length) {
-            for (moduleName in commonModObj) {
-                for (chunkName in config) {
-                    config[chunkName].forEach(function(configModule) {
-                        if (configModule == moduleName) {
-                            chunkAmountObj[chunkName] = config[chunkName].length;
-                        }
-                    })
-                }
-            }
+        // if (commonModules.length) {
+        //     for (moduleName in commonModObj) {
+        //         for (chunkName in config) {
+        //             config[chunkName].forEach(function(configModule) {
+        //                 if (configModule == moduleName) {
+        //                     chunkAmountObj[chunkName] = config[chunkName].length;
+        //                 }
+        //             })
+        //         }
+        //     }
 
-            for (chunkName in chunkAmountObj) {
-                if (chunkAmountObj[chunkName] > longest) {
-                    longest = chunkAmountObj[chunkName];
-                    longestChunkName = chunkName;
-                }
-            }
+        //     for (chunkName in chunkAmountObj) {
+        //         if (chunkAmountObj[chunkName] > longest) {
+        //             longest = chunkAmountObj[chunkName];
+        //             longestChunkName = chunkName;
+        //         }
+        //     }
 
-            entriesNames.push(longestChunkName);
-            for (chunkName in config) {
-                parentsChunkObj[chunkName] = longestChunkName;
-            }
-            parentsChunkObj[longestChunkName] ='';
-            parentsChunkArr.push(longestChunkName);
-        }
-        /* 
-         * 如果commonChunkplugin的逻辑发现，所以入口之间不存在公共模块
-         * 找所有该入口依赖的chunks
-         * 随便找一个chunk，只要它不是入口chunk。
-         * 作为parent chunk
-         */
-        if (commonModules.length == 0) {
-        // if (true) {
-            //parentsChunkObj
-            for (chunkname in config) {
-                (function(chunkname){
-                    BelongChunksToEntryChunk[chunkname].forEach(function(tempEntryChunk) {
-                        entryChunkToBelongChunks[tempEntryChunk].forEach(function(chunk) {
-                            if (chunk == tempEntryChunk && chunk!= chunkname) {
-                                return
-                            } else {
-                                targetChunk = chunk;
-                            }
-                        })
-                        entryChunkToBelongChunks[tempEntryChunk].forEach(function(chunk) {
-                            parentsChunkObj[chunk] = targetChunk;
-                        })
-                    })
-                })(chunkname);
-            }
+        //     entriesNames.push(longestChunkName);
+        //     for (chunkName in config) {
+        //         parentsChunkObj[chunkName] = longestChunkName;
+        //     }
+        //     parentsChunkObj[longestChunkName] ='';
+        //     parentsChunkArr.push(longestChunkName);
+        // }
+        // /* 
+        //  * 如果commonChunkplugin的逻辑发现，所以入口之间不存在公共模块
+        //  * 找所有该入口依赖的chunks
+        //  * 随便找一个chunk，只要它不是入口chunk。
+        //  * 作为parent chunk
+        //  */
+        // if (commonModules.length == 0) {
+        // // if (true) {
+        //     //parentsChunkObj
+        //     for (chunkname in config) {
+        //         (function(chunkname){
+        //             BelongChunksToEntryChunk[chunkname].forEach(function(tempEntryChunk) {
+        //                 entryChunkToBelongChunks[tempEntryChunk].forEach(function(chunk) {
+        //                     if (chunk == tempEntryChunk && chunk!= chunkname) {
+        //                         return
+        //                     } else {
+        //                         targetChunk = chunk;
+        //                     }
+        //                 })
+        //                 entryChunkToBelongChunks[tempEntryChunk].forEach(function(chunk) {
+        //                     parentsChunkObj[chunk] = targetChunk;
+        //                 })
+        //             })
+        //         })(chunkname);
+        //     }
 
-            for (chunkname in parentsChunkObj) {
-                if (parentsChunkObj[chunkname] == chunkname) {
-                    parentsChunkObj[chunkname] = '';
-                    parentsChunkArr.push(chunkname);
-                }
-            }        
-        }
+        //     for (chunkname in parentsChunkObj) {
+        //         if (parentsChunkObj[chunkname] == chunkname) {
+        //             parentsChunkObj[chunkname] = '';
+        //             parentsChunkArr.push(chunkname);
+        //         }
+        //     }        
+        // }
 
         /*
          * parentsChunkObj = {
@@ -1194,18 +1247,42 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptPath,
     }
 
     function getRelativeResource(resource) {
-        if (resource in compilation.compiler.options.externals) {
+        var testStr = '';
+        if (compilation.compiler.options.externals && resource in compilation.compiler.options.externals) {
             return resource
         }
         if (getProjectPath().length > resource.length) {
             return resource
         }
 
-        return resource.substring(getProjectPath().length, resource.length)
+        testStr = resource.substring(0, getProjectPath().length);
+
+        if (testStr == getProjectPath()) {
+            return resource.substring(getProjectPath().length, resource.length)
+        } else {
+            return resource
+        }
+    }
+
+    function getRelativeResourcePath(resource) {
+        if (compilation.compiler.options.externals && resource in compilation.compiler.options.externals) {
+            return resource
+        }
+        if (getProjectPath().length > resource.length) {
+            return resource
+        }
+
+        testStr = resource.substring(0, getProjectPath().length);
+
+        if (testStr == getProjectPath()) {
+            return './' + resource.substring(getProjectPath().length, resource.length)
+        } else {
+            return resource
+        }
     }
 
     function addProjectPath(modname) {
-        if (modname in compilation.compiler.options.externals) {
+        if (compilation.compiler.options.externals && modname in compilation.compiler.options.externals) {
             return modname
         }
 
@@ -1231,7 +1308,7 @@ SeperateChunkPlugin.prototype.apply = function(compiler) {
     var minSize = this.minSize;
     var ident = this.ident;
     var bundleFiles = this.bundleFiles;
-    var outputScriptPath = this.outputScriptPath;
+    var outputScriptFile = this.outputScriptFile;
     compiler.plugin("this-compilation", function(compilation) {
         compilation.plugin(["optimize-chunks", "optimize-extracted-chunks"], function(chunks) {
             // only optimize once
@@ -1350,7 +1427,7 @@ SeperateChunkPlugin.prototype.apply = function(compiler) {
             ///
             consoleAllModules(chunks);
 
-            SeperateChunksInit.call(this, chunks, commonChunks, bundleFiles, outputScriptPath, compilation, compiler);
+            SeperateChunksInit.call(this, chunks, commonChunks, bundleFiles, outputScriptFile, compilation, compiler);
 
             consoleAllModules(chunks);
             ///
@@ -1419,6 +1496,43 @@ function removeDuplicates(arr) {
         }
     }
     return result;
+}
+
+function pushWithoutDuplication(value, targetArr) {
+    if (!targetArr) {
+        targetArr = [value];
+    } else {
+        if (!in_array(value, targetArr)) {
+            targetArr.push(value);
+        }
+    }
+}
+
+/**
+ * 找到最经常用到的那个chunk
+ */
+function findMostUsedChunk(siblings, self, UsedTimeObj, parentsChunkObj, parentsChunkArr, notEntry, noParents, compilation) {
+    var mostUsedChunk = self,
+        finded = false,
+        findedNumber = 0;
+    siblings.forEach(function(siblingChunk) {
+        //如果有一个已经是parent了,那么直接拿他当mostUsedChunk
+        if (in_array(siblingChunk, parentsChunkArr)) {
+            finded = true;
+            findedNumber ++;
+            mostUsedChunk = siblingChunk;
+        //找最大的被引用次数的
+        } else if (!finded && mostUsedChunk && (UsedTimeObj[siblingChunk] > UsedTimeObj[mostUsedChunk])) {
+            //如果这个mostUsedChunk已经找到自己的parent了，则不能当别人的parent。
+            if (!parentsChunkObj[mostUsedChunk]) {
+                mostUsedChunk = siblingChunk;
+            }
+        }
+    })
+    if (findedNumber > 1) {
+        compilation.errors.push(new Error("如此构造bundle文件，会导致同一个页面有两个入口函数，从而使页面无法运行"));
+    }
+    return mostUsedChunk;
 }
 
 function consoleAllModules(chunks) {
