@@ -1,4 +1,4 @@
-SeperateChunkPlgin
+SeperateChunkPlugin
 ===================
 webpack的打包特点一直是倾向于all-in-one的打包方式，尽管有commonsChunkPlugin,等一系列优化工具，但是在一些业务中这样还是会导致性能损耗。 因为系统无法自动地理解文件之间的业务关系，所以无法极致地优化使用体验。
 
