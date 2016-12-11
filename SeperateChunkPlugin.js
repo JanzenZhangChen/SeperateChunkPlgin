@@ -106,7 +106,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
         chunks.forEach(function(chunk) {
             pathModObj = getModuleRelativePathObjWithoutType(chunk.modules);
             for (modRes in pathModObj) {
-                if (!in_array(pathModObj[modRes].resource, dependencies) && chunk.initial == true) {
+                if (!in_array(getModuleResource(pathModObj[modRes]), dependencies) && chunk.initial == true) {
                     extraModuleInstalledByWebpackSecretly.push(pathModObj[modRes].resource);
                 }
             }
@@ -209,9 +209,14 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
                 }
             }
         })
-        for (chunkname in parentsChunkNameObj) {
-            chunkname
-        }
+
+        /**
+         * 去重每一个chunk下的chunks
+         */
+        // for (chunkname in chunks) {
+        //     chunks[chunkname].chunks = removeDupicatesOfObj(chunks[chunkname].chunks);
+        // }
+
         //设置异步chunk的parent的
         chunks.forEach(function(asyncChunk) {
             var parentNameArr = [];
@@ -248,7 +253,11 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
         });
         allModules.forEach(function(mod) {
             if (!mod.resource) {
-                mod.resource = mod.reasons[0].dependency.request;
+                // if (mod.reasons[0]) {
+                //     mod.resource = mod.reasons[0].dependency.request;
+                // } else {
+                mod.resource = mod.request || mod.name || mod.reasons[0].dependency.request;
+                // }
                 // try {
                 //     mod.resource = require.resolve(mod.reasons[0].dependency.request);
                 // } catch (e) {
@@ -477,7 +486,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
                     entryChunkToBelongChunks[ moduleResToChunk[entryRes][0] ].push(chunkname);
                 })
             })
-            entryChunkToBelongChunks[ moduleResToChunk[entryRes][0] ] = removeDuplicates( entryChunkToBelongChunks[ moduleResToChunk[entryRes][0] ] );
+            entryChunkToBelongChunks[ moduleResToChunk[entryRes][0] ] = removeDuplicates(entryChunkToBelongChunks[moduleResToChunk[entryRes][0]]);
         }
         /**
          * 这时候的entryChunkToBelongChunks充满了冗余的chunk,必须要去除。
@@ -771,26 +780,40 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
     function getEntryDependencies(compilation) {
         var entriesResources = {};
 
-        function getDependecies(depBlock) {
+        function getDependecies(depBlock, parentDependecies) {
             var dependencies = [];
-            dependencies.push(depBlock.resource);
+            if (in_array(depBlock.resource, parentDependecies)) {
+                // console.log('--存在循环依赖:---');
+                // console.log(depBlock.resource);
+                // console.log('-----------------');
+                // console.log('former res : ' + depBlock.resource);
+                // console.log('parent : ' + depObj[depBlock.resource].parent);
+                // console.log('-----------');
+                pushWithoutDuplication(depBlock.resource, dependencies);
+                return dependencies
+            }
+
+            pushWithoutDuplication(depBlock.resource, dependencies);
+
             depBlock.dependencies.forEach(function(dep) {
                 if (dep.module) {
-                    dependencies = dependencies.concat(getDependecies(dep.module));
+                    dependencies = dependencies.concat(getDependecies(dep.module, parentDependecies.concat([depBlock.resource])));
                 }
             })
+
             return dependencies
         }
 
         compilation.entries.forEach(function(entry) {
-            entriesResources[entry.resource] = [];
+            var entryRes = getModuleResource(entry);
+            entriesResources[entryRes] = [];
             entry.dependencies.forEach(function(dep) {
                 if (dep.module) {
-                    entriesResources[entry.resource] = entriesResources[entry.resource].concat(getDependecies(dep.module));
+                    entriesResources[entryRes] = entriesResources[entryRes].concat(getDependecies(dep.module, getModuleResource(dep.module) == entryRes ? [] : [entryRes]));
                 }
             })
-            entriesResources[entry.resource].push(entry.resource);
-            entriesResources[entry.resource] = removeDuplicates(entriesResources[entry.resource]);
+            entriesResources[entryRes].push(entryRes);
+            entriesResources[entryRes] = removeDuplicates(entriesResources[entryRes]);
         })
 
         return entriesResources
@@ -808,7 +831,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
             })
         }
 
-        return allDependencies
+        return removeDuplicates(allDependencies);
     }
 
     /**
@@ -877,13 +900,15 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
         removeAllEmptyChunk(chunks);
 
         chunks.forEach(function(chunk) {
+            var modName;
             // 非异步模块
             if (chunk.initial == true) {
                 pathModObj = getModuleRelativePathObjWithoutType(chunk.modules);
                 config[chunk.name] = [];
                 for (modName in pathModObj) {
-                    config[chunk.name].push(getRelativeResource(pathModObj[modName].resource));
+                    config[chunk.name].push(getRelativeResource(getModuleResource(pathModObj[modName])));
                 }
+                config[chunk.name] = removeDuplicates(config[chunk.name]);
             }
         })
         // bundleFiles参数
@@ -955,7 +980,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
                 //满足上述情况下，如果有丢失的文件，那么找出来。
                 checkMissingFile(config);
                 return true
-            } else  {
+            } else {
                 return false
             }
         } else {
@@ -992,7 +1017,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
         //config中的配置文件没有重复
         function checkDuplication() {
             var hash = {}, wrongFile = [], ret = true;
-            
+
             for (var i = 0, elem; (elem = configResArr[i]) != null; i++) {
                 if (!hash[elem]) {
                     hash[elem] = true;
@@ -1025,7 +1050,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
                 }
             }
 
-            if(!ret) {
+            if (!ret) {
                 compilation.errors.push(new Error("同一个chunk内不允许存在重复文件(There are duplicate files in config‘s chunks): \n" + wrongFile));
             }
 
@@ -1041,7 +1066,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
                 allConfigMods = flatConfig(config);
 
             compilation.entries.forEach(function(entry) {
-                entryRelaResArr.push(getRelativeResource(entry.resource));
+                entryRelaResArr.push(getRelativeResource(getModuleResource(entry)));
             })
 
             entryRelaResArr.forEach(function(entry) {
@@ -1092,7 +1117,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
                 missingFiles.forEach(function(file) {
                     if (file in modMap) {
                         if (modMap[file].chunks.length == 1) {
-                            config[findChunkForOriginChunk(modMap[file].chunks[0])].unshift(file);                          
+                            config[findChunkForOriginChunk(modMap[file].chunks[0])].unshift(file);
                         } else {
                             modMap[file].chunks.forEach(function(chunk) {
                                 config[findChunkForOriginChunk(chunk)].unshift(file);
@@ -1130,13 +1155,13 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
             deps = getAllDependenciesRes(compilation);
             configResArr.forEach(function(res) {
                 if (!in_array(res, deps)) {
-                    extrafiles.push(res);
+                    extrafiles.push(getRelativeResource(res));
                     ret = false;
                 }
             })
 
             if (!ret) {
-                compilation.errors.push(new Error("有多余的文件(There are extra files in config): \n" + extrafiles));
+                compilation.errors.push(new Error("配置中有多余的文件(There are extra files in config): \n" + extrafiles.join('\n')));
             }
 
             return ret
@@ -1192,6 +1217,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
     }
 
     function getModuleRelativePathObjWithoutType(allModules) {
+        setModResource(allModules);
         var pathModObj = {};
         allModules.forEach(function(mod) {
             if (mod.resource.length > getProjectPath().length) {
@@ -1224,7 +1250,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
     function getModResToMod(allModules) {
         var modResToMod = {};
         allModules.forEach(function(mod) {
-            modResToMod[mod.resource] = mod;
+            modResToMod[getModuleResource(mod)] = mod;
         })
         return modResToMod
     }
@@ -1251,10 +1277,15 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
     }
 
     function getRelativeResource(resource) {
-        var testStr = '';
-        if (compilation.compiler.options.externals && resource in compilation.compiler.options.externals) {
-            return resource
+        var testStr = '', ext;
+        if (compilation.compiler.options.externals) {
+            for (ext in compilation.compiler.options.externals) {
+                if (compilation.compiler.options.externals[ext] == resource) {
+                    return resource
+                }
+            }
         }
+
         if (getProjectPath().length > resource.length) {
             return resource
         }
@@ -1269,9 +1300,14 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
     }
 
     function getRelativeResourcePath(resource) {
-        if (compilation.compiler.options.externals && resource in compilation.compiler.options.externals) {
-            return resource
+        if (compilation.compiler.options.externals) {
+            for (ext in compilation.compiler.options.externals) {
+                if (compilation.compiler.options.externals[ext] == resource) {
+                    return resource
+                }
+            }
         }
+
         if (getProjectPath().length > resource.length) {
             return resource
         }
@@ -1286,11 +1322,26 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
     }
 
     function addProjectPath(modname) {
-        if (compilation.compiler.options.externals && modname in compilation.compiler.options.externals) {
-            return modname
+        if (compilation.compiler.options.externals) {
+            for (ext in compilation.compiler.options.externals) {
+                if (compilation.compiler.options.externals[ext] == modname) {
+                    return modname
+                }
+            }
         }
 
         return getProjectPath() + modname;
+    }
+
+    function getModuleResource(module) {
+        if (module.request) {
+            //普通的module的情况
+            return module.resource;
+        } else {
+            //babel-polyfill这样的包的情况
+            // return module.dependencies[0].module.resource;
+            return getProjectPath() + module.resource;
+        }
     }
 
     // 获取项目的当前的路径
@@ -1502,6 +1553,17 @@ function removeDuplicates(arr) {
     return result;
 }
 
+function removeDupicatesOfObj(arr) {
+    var tempArr = [];
+    arr.forEach(function(obj, index) {
+        var tempObj = tempArr.splice(index, 1);
+        if (!in_array(tempObj, tempArr)) {
+            tempArr.push(tempObj);
+        }
+    })
+    return tempArr
+}
+
 function pushWithoutDuplication(value, targetArr) {
     if (!targetArr) {
         targetArr = [value];
@@ -1523,7 +1585,7 @@ function findMostUsedChunk(siblings, self, UsedTimeObj, parentsChunkObj, parents
         //如果有一个已经是parent了,那么直接拿他当mostUsedChunk
         if (in_array(siblingChunk, parentsChunkArr)) {
             finded = true;
-            findedNumber ++;
+            findedNumber++;
             mostUsedChunk = siblingChunk;
         //找最大的被引用次数的
         } else if (!finded && mostUsedChunk && (UsedTimeObj[siblingChunk] > UsedTimeObj[mostUsedChunk])) {
@@ -1542,7 +1604,7 @@ function findMostUsedChunk(siblings, self, UsedTimeObj, parentsChunkObj, parents
 function consoleAllModules(chunks) {
     debug = false;
     // debug = true;
-    if(debug) {
+    if (debug) {
         console.log('-----------------------------');
         console.log('-----------------------------');
         chunks.forEach(function(chunk) {
@@ -1550,7 +1612,7 @@ function consoleAllModules(chunks) {
             console.log('initial : ' + chunk.initial);
             console.log('entry : ' + chunk.entry);
             console.log('parents : ');
-            if(chunk.parents) {
+            if (chunk.parents) {
                 chunk.parents.forEach(function(parent) {
                     console.log(parent.name);
                 })
@@ -1558,7 +1620,7 @@ function consoleAllModules(chunks) {
             console.log('----');
 
             console.log('chunks : ');
-            if(chunk.chunks) {
+            if (chunk.chunks) {
                 chunk.chunks.forEach(function(chunk) {
                     console.log(chunk.name);
                 })
