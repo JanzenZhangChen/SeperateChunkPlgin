@@ -5,6 +5,9 @@ var fs = require('fs');
 var path = require('path');
 var MODULE = require('module');
 
+var PLATFORM = process.platform == 'darwin' ? 'MAC' : 'WIN';
+var FILESLASH = PLATFORM == 'MAC' ? '/' : '\\';
+
 var nextIdent = 0;
 
 if (!console) {
@@ -278,7 +281,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
             scriptTpl = '<script src=\"$path$\"></script>\n';
             colorScriptTpl = '<script src=\"\033[32m$path$\033[0m\"></script>'
             outputFileName = compilation.options.output.filename, // [name].js
-            outputPath = getRelativeResourcePath(compilation.options.output.publicPath ? compilation.options.output.publicPath : compilation.options.output.path + '/'), // './build/dest' + '/'
+            outputPath = getRelativeResourcePath(compilation.options.output.publicPath ? compilation.options.output.publicPath : compilation.options.output.path + FILESLASH), // './build/dest' + '/'
             genScriptStringObj = genScriptString(),
             scriptString = genScriptStringObj.finalString,
             scriptJson = genScriptStringObj.finalJson;
@@ -1246,7 +1249,6 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
         return pathModObj;
     }
 
-
     function getModResToMod(allModules) {
         var modResToMod = {};
         allModules.forEach(function(mod) {
@@ -1315,7 +1317,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
         testStr = resource.substring(0, getProjectPath().length);
 
         if (testStr == getProjectPath()) {
-            return './' + resource.substring(getProjectPath().length, resource.length)
+            return '.' + FILESLASH + resource.substring(getProjectPath().length, resource.length)
         } else {
             return resource
         }
@@ -1346,7 +1348,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
 
     // 获取项目的当前的路径
     function getProjectPath() {
-        return process.cwd() + '/';
+        return process.cwd() + FILESLASH;
     }
 
     return chunks

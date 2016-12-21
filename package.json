@@ -1,6 +1,6 @@
 {
   "name": "seperate-chunk-plugin",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "a webpack plugin to customize how to bundle",
   "main": "SeperateChunkPlugin.js",
   "scripts": {
