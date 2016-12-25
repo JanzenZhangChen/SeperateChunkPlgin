@@ -74,6 +74,10 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
     } else {
         config = generateConfig(chunks, commonChunks, entries, bundleFiles);
     }
+    if (PLATFORM == 'WIN') {
+        config = parseConfigIntoLocalStyle(config);
+    }
+
     //判断config结构,并且根据情况会修改config的内容
     if (testConfig(config)) {
         seperateChunksByConfig.call(this, chunks, config, commonChunks, entries);
@@ -638,14 +642,14 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
                 if (sibling == mostUsedChunk) {
                     parentsChunkObj[chunkname] = mostUsedChunk;
                     pushWithoutDuplication(mostUsedChunk, parentsChunkArr);
-                } else if (!(sibling in entryChunkToBelongChunks) && !parentsChunkObj[chunkname]){
+                } else if (!(sibling in entryChunkToBelongChunks) && !parentsChunkObj[chunkname]) {
                     parentsChunkObj[chunkname] = notEntry;
                 }
             })
         }
         // console.log(parentsChunkObj);
         // console.log(parentsChunkArr);
-        /* 
+        /** 
          * 如果commonChunkplugin的逻辑帮我们分析出了全部公共模块
          * 找出这些公共模块在config中所在的所有chunk
          * 找出这些chunk中最大的一个
@@ -837,57 +841,27 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
         return removeDuplicates(allDependencies);
     }
 
-    /**
-     * 已经废弃
-     * 自动生成配置，不拆分common的模块，保留入口模块在入口chunk
-     */
-    function generateConfig_seperate(chunks, commonChunks, entries, bundleFiles) {
-        var config = {},
-            pathModObj,
-            key,
-            chunkname,
-            noCommon = false;
-
-        chunks.forEach(function(chunk) {
-            pathModObj = getModuleRelativePathObjWithoutType(chunk.modules);
-            //非公共chunk的话，进行拆分
-            if (!name_in_chunks(chunk.name, commonChunks)) {
-                if (chunk.initial == true) {
-                    for (modName in pathModObj) {
-                        config[modName] = [getRelativeResource(pathModObj[modName].resource)];
-                    }
-                }
-            } else {
-                // 异步chunk不拆分
-                commonChunks.forEach(function(commonchunk) {
-                    if (commonchunk.modules.length == 0) {
-                        noCommon = true;
-                    };
-                })
-                if (noCommon) {
-                    return 
-                } else {
-                    config[chunk.name] = [];
-                    for (modName in pathModObj) {
-                        config[chunk.name].push(getRelativeResource(pathModObj[modName].resource));
-                    }
-                }
-            }
-        })
-
-        for (chunkname in config) {
-            bundleFiles.forEach(function(file) {
-                if (isChunkInFile(file, chunkname)) {
-                    if (!Array.isArray(config[file])) {
-                        config[file] = [];
-                    }
-                    config[file] = config[file].concat(config[chunkname]);
-                    delete config[chunkname];
-                }
-            })
+    function parseConfigIntolinuxStyle(config) {
+        var newConfig;
+        if (PLATFORM == 'WIN') {
+            newConfig = JSON.parse(JSON.stringify(config).replace(/\\+/g, '/'));
         }
+        return newConfig
+    }
 
-        return config
+    function parseConfigIntoLocalStyle(config) {
+        var newConfig = {};
+        if (PLATFORM == 'WIN') {
+            for (var i in config) {
+                if (!newConfig[i.replace(/\/+/g, '\\\\')]) {
+                    newConfig[i.replace(/\/+/g, '\\\\')] = [];
+                };
+                config[i].forEach(function(item) {
+                    newConfig[i.replace(/\/+/g, '\\\\')].push(item.replace(/\/+/g, '\\'));
+                })
+            }
+        }
+        return newConfig
     }
 
     /**
@@ -926,7 +900,6 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
                 }
             })
         }
-
         return config
     }
 
@@ -946,12 +919,11 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
 
     function getConfig() {
         var configLoc = getConfigPath(),
-            config = 'hehe', ret, bool;
+            config, ret, bool;
 
         try {
             config = require(configLoc);
         } catch (e) {
-            // console.log(e);
             config = false
         }
 
@@ -1195,8 +1167,9 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
     //把配置写到seperate.config.js里面
     function writeConfigToFile(config) {
         var configString = 'module.exports = $config$',
-            fileLoc = getConfigPath();
-        configString = configString.replace(/\$config\$/g, JSON.stringify(config, null, 4));
+            fileLoc = getConfigPath(),
+            newConfig = PLATFORM == 'WIN' ? parseConfigIntolinuxStyle(config) : config;
+        configString = configString.replace(/\$config\$/g, JSON.stringify(newConfig, null, 4));
         fs.writeFileSync(fileLoc, configString);
     }
 
@@ -1341,7 +1314,9 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
             return module.resource;
         } else {
             //babel-polyfill这样的包的情况
-            // return module.dependencies[0].module.resource;
+            if (PLATFORM == 'WIN') {
+                return getProjectPath() + module.resource.replace(/\/+/g, '\\');
+            }
             return getProjectPath() + module.resource;
         }
     }
