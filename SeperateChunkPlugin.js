@@ -74,6 +74,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
     } else {
         config = generateConfig(chunks, commonChunks, entries, bundleFiles);
     }
+
     if (PLATFORM == 'WIN') {
         config = parseConfigIntoLocalStyle(config);
     }
@@ -796,11 +797,11 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
                 // console.log('former res : ' + depBlock.resource);
                 // console.log('parent : ' + depObj[depBlock.resource].parent);
                 // console.log('-----------');
-                pushWithoutDuplication(depBlock.resource, dependencies);
+                pushWithoutDuplication(getModuleResource(depBlock), dependencies);
                 return dependencies
             }
 
-            pushWithoutDuplication(depBlock.resource, dependencies);
+            pushWithoutDuplication(getModuleResource(depBlock), dependencies);
 
             depBlock.dependencies.forEach(function(dep) {
                 if (dep.module) {
@@ -900,6 +901,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
                 }
             })
         }
+
         return config
     }
 
@@ -1313,7 +1315,7 @@ function SeperateChunksInit(chunks, commonChunks, bundleFiles, outputScriptFile,
             //普通的module的情况
             return module.resource;
         } else {
-            //babel-polyfill这样的包的情况
+            //在entry里有babel-polyfill这样的包的情况
             if (PLATFORM == 'WIN') {
                 return getProjectPath() + module.resource.replace(/\/+/g, '\\');
             }
